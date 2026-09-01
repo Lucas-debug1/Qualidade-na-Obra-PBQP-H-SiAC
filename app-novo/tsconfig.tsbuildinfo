@@ -1,0 +1,1 @@
+{"root":["./src/App.tsx","./src/main.tsx","./src/modules.tsx","./src/operational.tsx","./src/tasks-page.tsx","./src/vite-env.d.ts","./src/components/CrudModule.tsx","./src/components/shared.tsx","./src/hooks/useSupabaseTable.ts","./src/lib/supabase.ts"],"version":"5.9.3"}
