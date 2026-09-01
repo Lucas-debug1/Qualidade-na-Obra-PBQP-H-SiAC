@@ -1,0 +1,117 @@
+@media print {
+  html, body, #root, .shell, .shell main {
+    width: 100% !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
+
+  .op-modal.wide,
+  .op-modal.wide > .op-form,
+  .modal .op-modal.wide > form {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .op-modal.wide {
+    padding: 0 !important;
+    border-radius: 0 !important;
+  }
+
+  .modal-title,
+  .print-identification,
+  .form-grid,
+  .op-form > label,
+  .check-head,
+  .check-item,
+  .op-form > .print-actions {
+    width: 100% !important;
+  }
+
+  .modal-title h2 {
+    font-size: 15pt !important;
+    margin: 2mm 0 3mm !important;
+  }
+
+  .op-form {
+    font-size: 8.5pt !important;
+    line-height: 1.25 !important;
+  }
+
+  .op-form label {
+    margin: 1.5mm 0 !important;
+  }
+
+  .checklist {
+    display: block !important;
+  }
+
+  .check-item {
+    grid-template-columns: 8mm minmax(0, 1fr) 11mm !important;
+    gap: 2mm !important;
+    padding: 2mm !important;
+    margin: 0 0 1.5mm !important;
+    border-radius: 2mm !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  .check-item > b {
+    width: 7mm !important;
+    height: 7mm !important;
+    font-size: 8pt !important;
+  }
+
+  .check-item strong { font-size: 8.5pt !important; }
+  .check-item small { font-size: 7pt !important; }
+  .check-item input { font-size: 7.5pt !important; padding: 1mm 0 !important; }
+
+  .photo-preview {
+    display: block !important;
+    width: 100% !important;
+    padding: 2mm !important;
+    margin-top: 1.5mm !important;
+    text-align: center !important;
+    border: 1px solid #999 !important;
+    border-radius: 2mm !important;
+  }
+
+  .photo-preview img {
+    display: block !important;
+    width: auto !important;
+    max-width: 100% !important;
+    height: auto !important;
+    max-height: 48mm !important;
+    margin: 0 auto !important;
+    object-fit: contain !important;
+    border-radius: 1mm !important;
+  }
+
+  .photo-preview span,
+  .photo-preview button {
+    display: none !important;
+  }
+
+  .result-buttons {
+    align-self: start !important;
+    justify-content: flex-end !important;
+  }
+
+  .op-form textarea {
+    min-height: 18mm !important;
+  }
+
+  .op-form::after {
+    display: block !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+}
+
+@page {
+  size: A4 portrait;
+  margin: 10mm;
+}

@@ -179,6 +179,35 @@ export function FvsOperational() {
     setEditing({ ...editing, answers });
   };
 
+  const printWithPhotos = async () => {
+    if (!editing) return;
+    const answers = await Promise.all(editing.answers.map(async (answer) => {
+      if (!answer.photoUrl || answer.photoUrl.startsWith('data:')) return answer;
+      try {
+        const response = await fetch(answer.photoUrl);
+        if (!response.ok) return answer;
+        const blob = await response.blob();
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result));
+          reader.onerror = () => reject(reader.error);
+          reader.readAsDataURL(blob);
+        });
+        return { ...answer, photoUrl: dataUrl };
+      } catch {
+        return answer;
+      }
+    }));
+    setEditing({ ...editing, answers });
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    const images = Array.from(document.querySelectorAll<HTMLImageElement>('.photo-preview img'));
+    await Promise.all(images.map((image) => image.complete ? image.decode().catch(() => undefined) : new Promise<void>((resolve) => {
+      image.addEventListener('load', () => resolve(), { once: true });
+      image.addEventListener('error', () => resolve(), { once: true });
+    })));
+    window.print();
+  };
+
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editing) return;
@@ -186,7 +215,8 @@ export function FvsOperational() {
     const nc = editing.answers.some((a) => a.result === 'NC');
     const pending = editing.answers.some((a) => !a.result);
     const { id, _isNew, ...rest } = editing;
-    const payload = { ...rest, general: pending ? 'Em andamento' : nc ? 'Reprovado' : 'Aprovado' };
+    const answers = rest.answers.map(({ photoUrl: _temporaryUrl, ...answer }) => answer);
+    const payload = { ...rest, answers, general: pending ? 'Em andamento' : nc ? 'Reprovado' : 'Aprovado' };
     if (_isNew) await create(payload);
     else await update(id, payload);
     setSaving(false);
@@ -319,7 +349,7 @@ export function FvsOperational() {
             <Field label="Pendência, RNC, correção ou reinspeção">
               <textarea value={editing.notes} onChange={(e) => setEditing({ ...editing, notes: e.target.value })} />
             </Field>
-            <div className="print-actions"><button type="button" className="print-button" onClick={() => window.print()}><Printer size={16}/>Imprimir / Salvar PDF</button><Actions cancel={() => setEditing(null)} label="Salvar inspeção" disabled={saving || uploading !== null} /></div>
+            <div className="print-actions"><button type="button" className="print-button" onClick={printWithPhotos}><Printer size={16}/>Imprimir / Salvar PDF</button><Actions cancel={() => setEditing(null)} label="Salvar inspeção" disabled={saving || uploading !== null} /></div>
           </form>
         </Modal>
       )}
