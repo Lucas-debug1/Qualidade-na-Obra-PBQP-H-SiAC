@@ -1,15 +1,16 @@
 import { useMemo, useState } from 'react';
-import { PackagePlus, Plus, Trash2 } from 'lucide-react';
+import { Camera, Image as ImageIcon, PackagePlus, Plus, Printer, Trash2 } from 'lucide-react';
 import { useSupabaseTable } from './hooks/useSupabaseTable';
 import { Actions, Empty, Field, Metric, Modal, Status, formatDate, uid } from './components/shared';
+import { supabase } from './lib/supabase';
 
 export const materialTypes = ['Cimento','Agregados','Aço para armaduras','Concreto usinado','Blocos/tijolos','Argamassas industrializadas','Tubos e conexões de água','Tubos e conexões de esgoto/pluvial','Fios e cabos elétricos','Eletrodutos e caixas','Disjuntores, DR e DPS','Telhas e acessórios','Madeira/estrutura da cobertura','Impermeabilizantes','Revestimentos cerâmicos','Argamassa colante e rejunte','Esquadrias','Vidros','Tintas, seladores e massas','Louças sanitárias','Metais e válvulas','Reservatório de água','Pré-moldados','Pisos táteis/acessibilidade','Selantes e fixadores'];
 export const fvsTemplates = ['Locação da obra e gabarito','Escavação e preparo de fundações','Fundações e baldrames','Impermeabilização de baldrames','Estrutura de concreto','Alvenaria de vedação','Chapisco, emboço e reboco','Contrapiso e regularização','Impermeabilização de áreas molhadas','Revestimento cerâmico','Esquadrias, vidros e ferragens','Estrutura e cobertura','Forros','Água fria e reservação','Esgoto sanitário e ventilação','Águas pluviais e drenagem externa','Infraestrutura elétrica embutida','Fiação, quadros e testes elétricos','Louças, metais e acessórios','Pintura interna e externa','Calçadas, passeios e acessibilidade','Urbanização, cercas e muros','Testes finais e comissionamento','Inspeção final e entrega da unidade'];
 const checks = ['Projeto e revisão vigentes confirmados','Etapa anterior inspecionada e liberada','Materiais aprovados e rastreáveis','Equipe treinada e procedimento disponível','Dimensões e cotas verificadas','Nível, prumo, alinhamento ou caimento conferidos','Tolerâncias do projeto/procedimento atendidas','Execução e acabamento sem defeitos aparentes','Ensaios ou testes previstos realizados','Instrumento de medição identificado e válido','Medições e evidências fotográficas registradas','Área limpa, protegida e liberada para a próxima etapa'];
 
 export type Material = { id: string; type: string; supplier: string; lot: string; invoice: string; quantity: string; received: string; status: string; notes: string };
-export type Answer = { result: 'C' | 'NC' | 'NA' | ''; evidence: string };
-export type Inspection = { id: string; code: string; service: string; unit: string; environment: string; date: string; project: string; procedure: string; team: string; inspector: string; answers: Answer[]; general: string; notes: string };
+export type Answer = { result: 'C' | 'NC' | 'NA' | ''; evidence: string; photoPath?: string; photoUrl?: string; photoName?: string };
+export type Inspection = { id: string; code: string; service: string; unit: string; environment: string; date: string; project: string; procedure: string; team: string; inspector: string; answers: Answer[]; general: string; notes: string; created_by?: string };
 
 const blankMaterial = (): Omit<Material, 'id'> => ({
   type: materialTypes[0],
@@ -139,8 +140,44 @@ export function FvsOperational() {
   const [editing, setEditing] = useState<(Inspection & { _isNew?: boolean }) | null>(null);
   const [saving, setSaving] = useState(false);
   const [filter, setFilter] = useState('');
+  const [uploading, setUploading] = useState<number | null>(null);
   const open = () => setEditing({ id: uid(), _isNew: true, ...blankInspection() });
   const template = (i: number) => setEditing((v) => (v ? { ...v, code: `FVS-${String(i + 1).padStart(2, '0')}`, service: fvsTemplates[i] } : v));
+
+  const openRecord = async (record: Inspection) => {
+    const answers = await Promise.all((record.answers ?? []).map(async (answer) => {
+      if (!answer.photoPath) return answer;
+      const { data } = await supabase.storage.from('inspection-photos').createSignedUrl(answer.photoPath, 3600);
+      return { ...answer, photoUrl: data?.signedUrl };
+    }));
+    setEditing({ ...record, answers });
+  };
+
+  const uploadPhoto = async (file: File, item: number) => {
+    if (!editing) return;
+    if (file.size > 10 * 1024 * 1024) return alert('A foto deve ter no máximo 10 MB.');
+    setUploading(item);
+    const { data: auth } = await supabase.auth.getUser();
+    if (!auth.user) { setUploading(null); return alert('Sessão expirada. Entre novamente.'); }
+    const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '-');
+    const path = `${auth.user.id}/${editing.id}/item-${item + 1}-${Date.now()}-${safe}`;
+    const { error } = await supabase.storage.from('inspection-photos').upload(path, file, { contentType: file.type, upsert: false });
+    if (error) { setUploading(null); return alert(`Não foi possível enviar a foto: ${error.message}`); }
+    const { data } = await supabase.storage.from('inspection-photos').createSignedUrl(path, 3600);
+    const answers = [...editing.answers];
+    answers[item] = { ...answers[item], photoPath: path, photoUrl: data?.signedUrl, photoName: file.name };
+    setEditing({ ...editing, answers });
+    setUploading(null);
+  };
+
+  const removePhoto = async (item: number) => {
+    if (!editing) return;
+    const current = editing.answers[item];
+    if (current.photoPath) await supabase.storage.from('inspection-photos').remove([current.photoPath]);
+    const answers = [...editing.answers];
+    answers[item] = { result: current.result, evidence: current.evidence };
+    setEditing({ ...editing, answers });
+  };
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -202,7 +239,7 @@ export function FvsOperational() {
                   <td>{r.inspector}</td>
                   <td><Status v={r.general} /></td>
                   <td className="row-actions">
-                    <button onClick={() => setEditing(r)}>Abrir</button>
+                    <button onClick={() => openRecord(r)}>Abrir</button>
                     <button aria-label="Excluir" onClick={() => confirm('Excluir esta inspeção?') && remove(r.id)}>
                       <Trash2 size={15} />
                     </button>
@@ -216,6 +253,12 @@ export function FvsOperational() {
       {editing && (
         <Modal title={`${editing.code} — ${editing.service}`} close={() => setEditing(null)} wide>
           <form onSubmit={save} className="op-form">
+            <div className="print-identification">
+              <div><small>Empresa / CNPJ</small><strong>GLAUCIO ALMEIDA DE ANDRADE LTDA — 24.763.309/0001-00</strong></div>
+              <div><small>Obra</small><strong>RESIDENCIAL RES. MARIA DO CARMO</strong></div>
+              <div><small>Endereço</small><strong>PE-109 KM 08, ALTO BONITO/PE</strong></div>
+              <div><small>ART / Responsável técnico</small><strong>PE20261586920 — FÁBIO LUIZ GODOY DO AMARAL</strong></div>
+            </div>
             <Field label="Modelo de FVS">
               <select value={Number(editing.code.slice(4)) - 1} onChange={(e) => template(Number(e.target.value))}>
                 {fvsTemplates.map((x, i) => <option value={i} key={x}>FVS-{String(i + 1).padStart(2, '0')} — {x}</option>)}
@@ -250,6 +293,9 @@ export function FvsOperational() {
                         setEditing({ ...editing, answers: a });
                       }}
                     />
+                    <div className="photo-control">
+                      {editing.answers[i].photoUrl ? <div className="photo-preview"><img src={editing.answers[i].photoUrl} alt={`Evidência do item ${i + 1}`} /><span><ImageIcon size={14}/>{editing.answers[i].photoName || 'Foto anexada'}</span><button type="button" onClick={() => removePhoto(i)}>Remover</button></div> : <label className="photo-button"><Camera size={15}/>{uploading === i ? 'Enviando...' : 'Tirar ou anexar foto'}<input type="file" accept="image/*" capture="environment" disabled={uploading === i} onChange={(e) => e.target.files?.[0] && uploadPhoto(e.target.files[0], i)} /></label>}
+                    </div>
                   </div>
                   <div className="result-buttons">
                     {(['C', 'NC', 'NA'] as const).map((v) => (
@@ -273,7 +319,7 @@ export function FvsOperational() {
             <Field label="Pendência, RNC, correção ou reinspeção">
               <textarea value={editing.notes} onChange={(e) => setEditing({ ...editing, notes: e.target.value })} />
             </Field>
-            <Actions cancel={() => setEditing(null)} label="Salvar inspeção" disabled={saving} />
+            <div className="print-actions"><button type="button" className="print-button" onClick={() => window.print()}><Printer size={16}/>Imprimir / Salvar PDF</button><Actions cancel={() => setEditing(null)} label="Salvar inspeção" disabled={saving || uploading !== null} /></div>
           </form>
         </Modal>
       )}

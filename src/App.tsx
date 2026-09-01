@@ -9,6 +9,7 @@ import { TasksPage } from './tasks-page';
 import { useSupabaseTable } from './hooks/useSupabaseTable';
 import { Metric } from './components/shared';
 import type { Inspection, Material } from './operational';
+import { useAuth } from './auth';
 
 const nav = [
   ['dash', 'Dashboards', BarChart3],
@@ -27,6 +28,7 @@ type Nc = { id: string; code: string; description: string; location: string; sev
 type TaskRow = { id: string; status: string; deadline: string };
 
 export default function Home() {
+  const { session, signOut } = useAuth();
   const [page, setPage] = useState('dash');
   const [open, setOpen] = useState(false);
   const label = nav.find((x) => x[0] === page)?.[1] ?? 'Visão geral';
@@ -75,7 +77,10 @@ export default function Home() {
           </div>
           <section>
             <span>● Dados em nuvem</span>
-            <b>FG</b>
+            <button className="user-menu" title={session.user.email} onClick={signOut}>
+              <b>{(session.user.user_metadata?.full_name || session.user.email || 'US').slice(0, 2).toUpperCase()}</b>
+              <small>Sair</small>
+            </button>
           </section>
         </header>
         {page === 'dash' && <Dashboard go={go} />}

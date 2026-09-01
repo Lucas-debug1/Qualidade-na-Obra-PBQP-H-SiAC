@@ -35,9 +35,14 @@ export function useSupabaseTable<T extends { id: string }>(
 
   const create = useCallback(
     async (record: Partial<T>) => {
+      const { data: authData } = await supabase.auth.getUser();
+      if (!authData.user) {
+        setError('Sessão expirada. Entre novamente.');
+        return null;
+      }
       const { data, error } = await supabase
         .from(table)
-        .insert(record as never)
+        .insert({ ...record, user_id: authData.user.id, created_by: authData.user.email } as never)
         .select()
         .single();
       if (error) {
