@@ -1,6 +1,7 @@
 import { Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useSupabaseTable } from '../hooks/useSupabaseTable';
+import { canEdit, useAuth } from '../auth';
 import { Actions, Empty, Field, Metric, Modal, Status, formatDate, uid } from './shared';
 
 export type FieldDef = {
@@ -56,6 +57,7 @@ export function CrudModule({
   modalTitle: (editing: Record0, isNew: boolean) => string;
 }) {
   const { records, loading, create, update, remove } = useSupabaseTable<Record0>(table);
+  const { session, role } = useAuth();
   const [editing, setEditing] = useState<Record0 | null>(null);
   const [isNew, setIsNew] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -131,10 +133,16 @@ export function CrudModule({
                     </td>
                   ))}
                   <td className="row-actions">
-                    <button onClick={() => openEdit(r)}>Editar</button>
-                    <button aria-label="Excluir" onClick={() => confirm('Excluir este registro?') && remove(r.id)}>
-                      <Trash2 size={15} />
-                    </button>
+                    {canEdit(role, session.user.id, r.user_id) ? (
+                      <>
+                        <button onClick={() => openEdit(r)}>Editar</button>
+                        <button aria-label="Excluir" onClick={() => confirm('Excluir este registro?') && remove(r.id)}>
+                          <Trash2 size={15} />
+                        </button>
+                      </>
+                    ) : (
+                      <small className="readonly-tag">Somente leitura</small>
+                    )}
                   </td>
                 </tr>
               ))

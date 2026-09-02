@@ -1,9 +1,10 @@
 import { Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useSupabaseTable } from './hooks/useSupabaseTable';
+import { canEdit, useAuth } from './auth';
 import { Actions, Field, Metric, Modal, uid } from './components/shared';
 
-type Task = { id: string; title: string; responsible: string; deadline: string; priority: string; status: string };
+type Task = { id: string; title: string; responsible: string; deadline: string; priority: string; status: string; user_id?: string };
 
 const columns = ['A fazer', 'Em andamento', 'Concluída'] as const;
 
@@ -17,6 +18,7 @@ const blankTask = (): Omit<Task, 'id'> => ({
 
 export function TasksPage() {
   const { records, loading, create, update, remove } = useSupabaseTable<Task>('tasks');
+  const { session, role } = useAuth();
   const [editing, setEditing] = useState<(Task & { _isNew?: boolean }) | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -77,12 +79,18 @@ export function TasksPage() {
                       {t.responsible || 'Sem responsável'} • {t.deadline ? new Date(`${t.deadline}T12:00:00`).toLocaleDateString('pt-BR') : 'sem prazo'}
                     </small>
                     <div className="row-actions" style={{ marginTop: 8 }}>
-                      {ci > 0 && <button onClick={() => move(t, -1)}>← Voltar</button>}
-                      {ci < columns.length - 1 && <button onClick={() => move(t, 1)}>Avançar →</button>}
-                      <button onClick={() => setEditing(t)}>Editar</button>
-                      <button aria-label="Excluir" onClick={() => confirm('Excluir esta tarefa?') && remove(t.id)}>
-                        <Trash2 size={15} />
-                      </button>
+                      {canEdit(role, session.user.id, t.user_id) ? (
+                        <>
+                          {ci > 0 && <button onClick={() => move(t, -1)}>← Voltar</button>}
+                          {ci < columns.length - 1 && <button onClick={() => move(t, 1)}>Avançar →</button>}
+                          <button onClick={() => setEditing(t)}>Editar</button>
+                          <button aria-label="Excluir" onClick={() => confirm('Excluir esta tarefa?') && remove(t.id)}>
+                            <Trash2 size={15} />
+                          </button>
+                        </>
+                      ) : (
+                        <small className="readonly-tag">Somente leitura</small>
+                      )}
                     </div>
                   </div>
                 ))}

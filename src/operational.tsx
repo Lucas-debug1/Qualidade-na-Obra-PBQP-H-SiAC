@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Camera, Image as ImageIcon, PackagePlus, Plus, Printer, Trash2 } from 'lucide-react';
 import { useSupabaseTable } from './hooks/useSupabaseTable';
+import { canEdit, useAuth } from './auth';
 import { Actions, Empty, Field, Metric, Modal, Status, formatDate, uid } from './components/shared';
 import { supabase } from './lib/supabase';
 
@@ -8,9 +9,9 @@ export const materialTypes = ['Cimento','Agregados','Aço para armaduras','Concr
 export const fvsTemplates = ['Locação da obra e gabarito','Escavação e preparo de fundações','Fundações e baldrames','Impermeabilização de baldrames','Estrutura de concreto','Alvenaria de vedação','Chapisco, emboço e reboco','Contrapiso e regularização','Impermeabilização de áreas molhadas','Revestimento cerâmico','Esquadrias, vidros e ferragens','Estrutura e cobertura','Forros','Água fria e reservação','Esgoto sanitário e ventilação','Águas pluviais e drenagem externa','Infraestrutura elétrica embutida','Fiação, quadros e testes elétricos','Louças, metais e acessórios','Pintura interna e externa','Calçadas, passeios e acessibilidade','Urbanização, cercas e muros','Testes finais e comissionamento','Inspeção final e entrega da unidade'];
 const checks = ['Projeto e revisão vigentes confirmados','Etapa anterior inspecionada e liberada','Materiais aprovados e rastreáveis','Equipe treinada e procedimento disponível','Dimensões e cotas verificadas','Nível, prumo, alinhamento ou caimento conferidos','Tolerâncias do projeto/procedimento atendidas','Execução e acabamento sem defeitos aparentes','Ensaios ou testes previstos realizados','Instrumento de medição identificado e válido','Medições e evidências fotográficas registradas','Área limpa, protegida e liberada para a próxima etapa'];
 
-export type Material = { id: string; type: string; supplier: string; lot: string; invoice: string; quantity: string; received: string; status: string; notes: string };
+export type Material = { id: string; type: string; supplier: string; lot: string; invoice: string; quantity: string; received: string; status: string; notes: string; user_id?: string };
 export type Answer = { result: 'C' | 'NC' | 'NA' | ''; evidence: string; photoPath?: string; photoUrl?: string; photoName?: string };
-export type Inspection = { id: string; code: string; service: string; unit: string; environment: string; date: string; project: string; procedure: string; team: string; inspector: string; answers: Answer[]; general: string; notes: string; created_by?: string };
+export type Inspection = { id: string; code: string; service: string; unit: string; environment: string; date: string; project: string; procedure: string; team: string; inspector: string; answers: Answer[]; general: string; notes: string; created_by?: string; user_id?: string };
 
 const blankMaterial = (): Omit<Material, 'id'> => ({
   type: materialTypes[0],
@@ -25,6 +26,7 @@ const blankMaterial = (): Omit<Material, 'id'> => ({
 
 export function MaterialsOperational() {
   const { records, loading, create, update, remove } = useSupabaseTable<Material>('materials');
+  const { session, role } = useAuth();
   const [editing, setEditing] = useState<(Material & { _isNew?: boolean }) | null>(null);
   const [saving, setSaving] = useState(false);
   const open = () => setEditing({ id: uid(), _isNew: true, ...blankMaterial() });
@@ -78,10 +80,16 @@ export function MaterialsOperational() {
                   <td>{formatDate(r.received)}</td>
                   <td><Status v={r.status} /></td>
                   <td className="row-actions">
-                    <button onClick={() => setEditing(r)}>Editar</button>
-                    <button aria-label="Excluir" onClick={() => confirm('Excluir este recebimento?') && remove(r.id)}>
-                      <Trash2 size={15} />
-                    </button>
+                    {canEdit(role, session.user.id, r.user_id) ? (
+                      <>
+                        <button onClick={() => setEditing(r)}>Editar</button>
+                        <button aria-label="Excluir" onClick={() => confirm('Excluir este recebimento?') && remove(r.id)}>
+                          <Trash2 size={15} />
+                        </button>
+                      </>
+                    ) : (
+                      <small className="readonly-tag">Somente leitura</small>
+                    )}
                   </td>
                 </tr>
               ))
@@ -137,6 +145,7 @@ const blankInspection = (): Omit<Inspection, 'id'> => ({
 
 export function FvsOperational() {
   const { records, loading, create, update, remove } = useSupabaseTable<Inspection>('inspections');
+  const { session, role } = useAuth();
   const [editing, setEditing] = useState<(Inspection & { _isNew?: boolean }) | null>(null);
   const [saving, setSaving] = useState(false);
   const [filter, setFilter] = useState('');
@@ -270,9 +279,11 @@ export function FvsOperational() {
                   <td><Status v={r.general} /></td>
                   <td className="row-actions">
                     <button onClick={() => openRecord(r)}>Abrir</button>
-                    <button aria-label="Excluir" onClick={() => confirm('Excluir esta inspeção?') && remove(r.id)}>
-                      <Trash2 size={15} />
-                    </button>
+                    {canEdit(role, session.user.id, r.user_id) && (
+                      <button aria-label="Excluir" onClick={() => confirm('Excluir esta inspeção?') && remove(r.id)}>
+                        <Trash2 size={15} />
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))
@@ -283,6 +294,12 @@ export function FvsOperational() {
       {editing && (
         <Modal title={`${editing.code} — ${editing.service}`} close={() => setEditing(null)} wide>
           <form onSubmit={save} className="op-form">
+            {!editing._isNew && !canEdit(role, session.user.id, editing.user_id) && (
+              <p className="readonly-banner">
+                Modo somente leitura — este registro foi criado por outro colaborador. Você pode ver e imprimir, mas não editar.
+              </p>
+            )}
+            <fieldset disabled={!editing._isNew && !canEdit(role, session.user.id, editing.user_id)} style={{ border: 0, padding: 0, margin: 0 }}>
             <div className="print-identification">
               <div><small>Empresa / CNPJ</small><strong>GLAUCIO ALMEIDA DE ANDRADE LTDA — 24.763.309/0001-00</strong></div>
               <div><small>Obra</small><strong>RESIDENCIAL RES. MARIA DO CARMO</strong></div>
@@ -349,7 +366,13 @@ export function FvsOperational() {
             <Field label="Pendência, RNC, correção ou reinspeção">
               <textarea value={editing.notes} onChange={(e) => setEditing({ ...editing, notes: e.target.value })} />
             </Field>
-            <div className="print-actions"><button type="button" className="print-button" onClick={printWithPhotos}><Printer size={16}/>Imprimir / Salvar PDF</button><Actions cancel={() => setEditing(null)} label="Salvar inspeção" disabled={saving || uploading !== null} /></div>
+            </fieldset>
+            <div className="print-actions">
+              <button type="button" className="print-button" onClick={printWithPhotos}><Printer size={16}/>Imprimir / Salvar PDF</button>
+              {(editing._isNew || canEdit(role, session.user.id, editing.user_id)) && (
+                <Actions cancel={() => setEditing(null)} label="Salvar inspeção" disabled={saving || uploading !== null} />
+              )}
+            </div>
           </form>
         </Modal>
       )}

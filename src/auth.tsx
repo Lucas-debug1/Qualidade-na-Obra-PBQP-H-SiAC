@@ -3,7 +3,8 @@ import type { Session } from '@supabase/supabase-js';
 import { LockKeyhole, LogIn, UserPlus } from 'lucide-react';
 import { supabase } from './lib/supabase';
 
-type AuthValue = { session: Session; signOut: () => Promise<void> };
+export type Role = 'inspetor' | 'mestre_obras' | 'engenheiro';
+type AuthValue = { session: Session; role: Role; signOut: () => Promise<void> };
 const AuthContext = createContext<AuthValue | null>(null);
 export const useAuth = () => {
   const value = useContext(AuthContext);
@@ -11,8 +12,14 @@ export const useAuth = () => {
   return value;
 };
 
+/** Um usuário pode editar/excluir um registro se for dono dele OU se for engenheiro. */
+export function canEdit(role: Role, userId: string | undefined, recordUserId: unknown) {
+  return role === 'engenheiro' || (!!userId && recordUserId === userId);
+}
+
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
+  const [role, setRole] = useState<Role>('inspetor');
   const [checking, setChecking] = useState(true);
   const [mode, setMode] = useState<'login' | 'signup'>('login');
   const [email, setEmail] = useState('');
@@ -22,9 +29,21 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
 
+  const loadRole = async (uid: string) => {
+    const { data } = await supabase.from('profiles').select('role').eq('id', uid).single();
+    setRole((data?.role as Role) ?? 'inspetor');
+  };
+
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => { setSession(data.session); setChecking(false); });
-    const { data } = supabase.auth.onAuthStateChange((_event, next) => setSession(next));
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      if (data.session) loadRole(data.session.user.id);
+      setChecking(false);
+    });
+    const { data } = supabase.auth.onAuthStateChange((_event, next) => {
+      setSession(next);
+      if (next) loadRole(next.user.id);
+    });
     return () => data.subscription.unsubscribe();
   }, []);
 
@@ -42,5 +61,5 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
 
   if (checking) return <div className="auth-loading">Verificando acesso...</div>;
   if (!session) return <main className="auth-page"><section className="auth-brand"><div className="auth-logo">Q</div><small>PBQP-H • SiAC</small><h1>Qualidade na Obra</h1><p>Inspeções, evidências e controles da qualidade em um ambiente seguro para sua equipe.</p><ul><li>Registros associados ao colaborador</li><li>Fotos e evidências da inspeção</li><li>FVS prontas para impressão e PDF</li></ul></section><section className="auth-card"><LockKeyhole size={30}/><div><small>ACESSO RESTRITO</small><h2>{mode === 'login' ? 'Entrar na plataforma' : 'Criar acesso'}</h2></div><form onSubmit={submit}>{mode === 'signup' && <label>Nome completo<input required value={name} onChange={e => setName(e.target.value)} /></label>}<label>E-mail<input type="email" required autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} /></label><label>Senha<input type="password" minLength={6} required autoComplete={mode === 'login' ? 'current-password' : 'new-password'} value={password} onChange={e => setPassword(e.target.value)} /></label>{error && <p className="auth-error">{error}</p>}{message && <p className="auth-message">{message}</p>}<button className="primary" disabled={busy}>{mode === 'login' ? <LogIn size={17}/> : <UserPlus size={17}/>} {busy ? 'Aguarde...' : mode === 'login' ? 'Entrar' : 'Cadastrar'}</button></form><button className="auth-switch" onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError(''); setMessage(''); }}>{mode === 'login' ? 'Primeiro acesso? Criar conta' : 'Já tenho acesso'}</button></section></main>;
-  return <AuthContext.Provider value={{ session, signOut: async () => { await supabase.auth.signOut(); } }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ session, role, signOut: async () => { await supabase.auth.signOut(); } }}>{children}</AuthContext.Provider>;
 }
