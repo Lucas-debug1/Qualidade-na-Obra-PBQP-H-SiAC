@@ -12,7 +12,9 @@
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "lucide-react": "^0.475.0",
-    "@supabase/supabase-js": "^2.49.4"
+    "@supabase/supabase-js": "^2.49.4",
+    "html2pdf.js": "^0.10.2",
+    "googleapis": "^144.0.0"
   },
   "devDependencies": {
     "@types/react": "^19.1.0",

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import html2pdf from 'html2pdf.js';
 import { Camera, Image as ImageIcon, PackagePlus, Plus, Printer, Trash2 } from 'lucide-react';
 import { useSupabaseTable } from './hooks/useSupabaseTable';
 import { canEdit, useAuth } from './auth';
@@ -150,6 +151,7 @@ export function FvsOperational() {
   const [saving, setSaving] = useState(false);
   const [filter, setFilter] = useState('');
   const [uploading, setUploading] = useState<number | null>(null);
+  const [driveStatus, setDriveStatus] = useState('');
   const open = () => setEditing({ id: uid(), _isNew: true, ...blankInspection() });
   const template = (i: number) => setEditing((v) => (v ? { ...v, code: `FVS-${String(i + 1).padStart(2, '0')}`, service: fvsTemplates[i] } : v));
 
@@ -188,6 +190,52 @@ export function FvsOperational() {
     setEditing({ ...editing, answers });
   };
 
+  const sendToDrive = async (record: Inspection) => {
+    const element = document.querySelector<HTMLElement>('.op-modal.wide');
+    if (!element) return;
+    setDriveStatus('Gerando PDF...');
+    try {
+      const filenameBase = `FVS ${record.code} - ${record.unit || 'sem unidade'}`.replace(/[/\\?%*:|"<>]/g, '-');
+      const worker = html2pdf()
+        .set({
+          margin: 6,
+          filename: `${filenameBase}.pdf`,
+          image: { type: 'jpeg', quality: 0.92 },
+          html2canvas: {
+            scale: 2,
+            useCORS: true,
+            onclone: (clonedDoc: Document) => {
+              clonedDoc
+                .querySelectorAll('.print-actions, .modal-title button, .photo-button, .result-buttons button:not(.selected)')
+                .forEach((el) => {
+                  (el as HTMLElement).style.display = 'none';
+                });
+            },
+          },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+          pagebreak: { mode: ['css', 'legacy'] },
+        })
+        .from(element);
+      const dataUri = await worker.outputPdf('datauristring');
+      const base64 = dataUri.split(',')[1];
+
+      setDriveStatus('Enviando para o Drive...');
+      const response = await fetch('/api/upload-drive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: `${filenameBase} - ${Date.now()}.pdf`, base64 }),
+      });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(json.error || 'Falha ao enviar para o Drive.');
+      setDriveStatus('Enviado ao Drive ✓');
+    } catch (err) {
+      console.error('Erro ao enviar FVS para o Drive:', err);
+      setDriveStatus('Não foi possível enviar ao Drive. O PDF local ainda funciona normalmente.');
+    } finally {
+      setTimeout(() => setDriveStatus(''), 6000);
+    }
+  };
+
   const printWithPhotos = async () => {
     if (!editing) return;
     const answers = await Promise.all(editing.answers.map(async (answer) => {
@@ -215,6 +263,7 @@ export function FvsOperational() {
       image.addEventListener('error', () => resolve(), { once: true });
     })));
     window.print();
+    void sendToDrive(editing);
   };
 
   const save = async (e: React.FormEvent) => {
@@ -369,6 +418,7 @@ export function FvsOperational() {
             </fieldset>
             <div className="print-actions">
               <button type="button" className="print-button" onClick={printWithPhotos}><Printer size={16}/>Imprimir / Salvar PDF</button>
+              {driveStatus && <span className="drive-status">{driveStatus}</span>}
               {(editing._isNew || canEdit(role, session.user.id, editing.user_id)) && (
                 <Actions cancel={() => setEditing(null)} label="Salvar inspeção" disabled={saving || uploading !== null} />
               )}
