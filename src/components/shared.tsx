@@ -12,7 +12,7 @@ export function Metric({ a, b, c = 'Indicador atualizado' }: { a: string; b: str
 }
 
 export function Status({ v }: { v: string }) {
-  const cls = /Reprov|Crítica|Alto|Aberta|Atrasad/.test(v)
+  const cls = /Reprov|Crítica|Alto|Aberta|Atrasad|Quarentena/.test(v)
     ? 'bad'
     : /análise|Atenção|Médio|Atualizar|andamento|A fazer|Monitorar/.test(v)
       ? 'warn'

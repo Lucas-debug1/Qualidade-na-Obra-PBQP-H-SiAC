@@ -5,12 +5,15 @@ import { useSupabaseTable } from './hooks/useSupabaseTable';
 import { canEdit, useAuth } from './auth';
 import { Actions, Empty, Field, Metric, Modal, Status, formatDate, uid } from './components/shared';
 import { supabase } from './lib/supabase';
+import { fvsNormativeRefs } from './normative-refs';
 
 export const materialTypes = ['Cimento','Agregados','Aço para armaduras','Concreto usinado','Blocos/tijolos','Argamassas industrializadas','Tubos e conexões de água','Tubos e conexões de esgoto/pluvial','Fios e cabos elétricos','Eletrodutos e caixas','Disjuntores, DR e DPS','Telhas e acessórios','Madeira/estrutura da cobertura','Impermeabilizantes','Revestimentos cerâmicos','Argamassa colante e rejunte','Esquadrias','Vidros','Tintas, seladores e massas','Louças sanitárias','Metais e válvulas','Reservatório de água','Pré-moldados','Pisos táteis/acessibilidade','Selantes e fixadores'];
 export const fvsTemplates = ['Locação da obra e gabarito','Escavação e preparo de fundações','Fundações e baldrames','Impermeabilização de baldrames','Estrutura de concreto','Alvenaria de vedação','Chapisco, emboço e reboco','Contrapiso e regularização','Impermeabilização de áreas molhadas','Revestimento cerâmico','Esquadrias, vidros e ferragens','Estrutura e cobertura','Forros','Água fria e reservação','Esgoto sanitário e ventilação','Águas pluviais e drenagem externa','Infraestrutura elétrica embutida','Fiação, quadros e testes elétricos','Louças, metais e acessórios','Pintura interna e externa','Calçadas, passeios e acessibilidade','Urbanização, cercas e muros','Testes finais e comissionamento','Inspeção final e entrega da unidade'];
 const checks = ['Projeto e revisão vigentes confirmados','Etapa anterior inspecionada e liberada','Materiais aprovados e rastreáveis','Equipe treinada e procedimento disponível','Dimensões e cotas verificadas','Nível, prumo, alinhamento ou caimento conferidos','Tolerâncias do projeto/procedimento atendidas','Execução e acabamento sem defeitos aparentes','Ensaios ou testes previstos realizados','Instrumento de medição identificado e válido','Medições e evidências fotográficas registradas','Área limpa, protegida e liberada para a próxima etapa'];
 
-export type Material = { id: string; type: string; supplier: string; lot: string; invoice: string; quantity: string; received: string; status: string; notes: string; user_id?: string };
+const materialChecks = ['Nota fiscal / pedido de compra apresentado', 'Fabricante identificado', 'Lote e validade legíveis e dentro do prazo', 'Identificação/etiqueta conforme especificação', 'Integridade da embalagem/peça (sem avarias)', 'Dimensões e aspecto visual conforme projeto/especificação', 'Certificado de ensaio/conformidade (quando aplicável)', 'Condição de armazenamento adequada'];
+
+export type Material = { id: string; type: string; supplier: string; lot: string; invoice: string; quantity: string; received: string; responsible: string; status: string; notes: string; answers: Answer[]; user_id?: string };
 export type Answer = { result: 'C' | 'NC' | 'NA' | ''; evidence: string; photoPath?: string; photoUrl?: string; photoName?: string };
 export type Inspection = { id: string; code: string; service: string; unit: string; environment: string; date: string; project: string; procedure: string; team: string; inspector: string; answers: Answer[]; general: string; notes: string; created_by?: string; user_id?: string };
 
@@ -21,8 +24,10 @@ const blankMaterial = (): Omit<Material, 'id'> => ({
   invoice: '',
   quantity: '',
   received: new Date().toISOString().slice(0, 10),
+  responsible: '',
   status: 'Em análise',
   notes: '',
+  answers: materialChecks.map(() => ({ result: '', evidence: '' })),
 });
 
 export function MaterialsOperational() {
@@ -36,7 +41,10 @@ export function MaterialsOperational() {
     e.preventDefault();
     if (!editing) return;
     setSaving(true);
-    const { id, _isNew, ...payload } = editing;
+    const nc = editing.answers.some((a) => a.result === 'NC');
+    const pending = editing.answers.some((a) => !a.result);
+    const { id, _isNew, ...rest } = editing;
+    const payload = { ...rest, status: nc ? 'Quarentena' : pending ? 'Em análise' : 'Aprovado' };
     if (_isNew) await create(payload);
     else await update(id, payload);
     setSaving(false);
@@ -47,9 +55,9 @@ export function MaterialsOperational() {
     <div className="page operational">
       <div className="title-row">
         <div>
-          <small className="eyebrow">PLANO DE INSPEÇÃO DE MATERIAIS</small>
+          <small className="eyebrow">FICHA DE VERIFICAÇÃO DE MATERIAL (FVM)</small>
           <h1>Materiais controlados</h1>
-          <p>Cadastre cada recebimento por fornecedor, nota fiscal e lote.</p>
+          <p>Verificações mínimas no recebimento — vira quarentena automática se houver item NC.</p>
         </div>
         <button className="primary" onClick={open}>
           <PackagePlus size={17} />
@@ -60,7 +68,7 @@ export function MaterialsOperational() {
         <Metric a="Grupos controlados" b="25" />
         <Metric a="Recebimentos" b={String(records.length)} />
         <Metric a="Aprovados" b={String(records.filter((x) => x.status === 'Aprovado').length)} />
-        <Metric a="Não conformes" b={String(records.filter((x) => x.status === 'Reprovado').length)} />
+        <Metric a="Em quarentena" b={String(records.filter((x) => x.status === 'Quarentena').length)} />
       </div>
       <div className="panel table op-table">
         <table>
@@ -83,7 +91,7 @@ export function MaterialsOperational() {
                   <td className="row-actions">
                     {canEdit(role, session.user.id, r.user_id) ? (
                       <>
-                        <button onClick={() => setEditing(r)}>Editar</button>
+                        <button onClick={() => setEditing(r)}>Abrir</button>
                         <button aria-label="Excluir" onClick={() => confirm('Excluir este recebimento?') && remove(r.id)}>
                           <Trash2 size={15} />
                         </button>
@@ -99,7 +107,7 @@ export function MaterialsOperational() {
         </table>
       </div>
       {editing && (
-        <Modal title="Recebimento de material" close={() => setEditing(null)}>
+        <Modal title={`FVM — ${editing.type}`} close={() => setEditing(null)} wide>
           <form onSubmit={save} className="op-form">
             <Field label="Material controlado">
               <select value={editing.type} onChange={(e) => setEditing({ ...editing, type: e.target.value })}>
@@ -112,14 +120,54 @@ export function MaterialsOperational() {
               <Field label="Nota fiscal / pedido"><input value={editing.invoice} onChange={(e) => setEditing({ ...editing, invoice: e.target.value })} /></Field>
               <Field label="Quantidade"><input required value={editing.quantity} onChange={(e) => setEditing({ ...editing, quantity: e.target.value })} /></Field>
               <Field label="Data do recebimento"><input type="date" value={editing.received} onChange={(e) => setEditing({ ...editing, received: e.target.value })} /></Field>
-              <Field label="Resultado">
-                <select value={editing.status} onChange={(e) => setEditing({ ...editing, status: e.target.value })}>
-                  <option>Em análise</option><option>Aprovado</option><option>Reprovado</option>
-                </select>
-              </Field>
+              <Field label="Responsável pelo recebimento"><input value={editing.responsible} onChange={(e) => setEditing({ ...editing, responsible: e.target.value })} /></Field>
             </div>
-            <Field label="Verificações e observações">
-              <textarea placeholder="Integridade, identificação, dimensões, certificado e armazenamento..." value={editing.notes} onChange={(e) => setEditing({ ...editing, notes: e.target.value })} />
+            <div className="check-head">
+              <b>Verificações mínimas no recebimento</b>
+              <span>{editing.answers.filter((a) => a.result).length} de {materialChecks.length} preenchidos</span>
+            </div>
+            <div className="checklist">
+              {materialChecks.map((check, i) => (
+                <div className="check-item" key={check}>
+                  <b>{i + 1}</b>
+                  <div>
+                    <strong>{check}</strong>
+                    <input
+                      placeholder="Evidência / observação"
+                      value={editing.answers[i].evidence}
+                      onChange={(e) => {
+                        const a = [...editing.answers];
+                        a[i] = { ...a[i], evidence: e.target.value };
+                        setEditing({ ...editing, answers: a });
+                      }}
+                    />
+                  </div>
+                  <div className="result-buttons">
+                    {(['C', 'NC', 'NA'] as const).map((v) => (
+                      <button
+                        type="button"
+                        className={editing.answers[i].result === v ? 'selected' : ''}
+                        key={v}
+                        onClick={() => {
+                          const a = [...editing.answers];
+                          a[i] = { ...a[i], result: v };
+                          setEditing({ ...editing, answers: a });
+                        }}
+                      >
+                        {v}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            {editing.answers.some((a) => a.result === 'NC') && (
+              <p className="readonly-banner" style={{ background: '#fbe9e7', color: '#a13a2e', borderColor: '#f0c4bb' }}>
+                ⚠ Item(ns) não conforme(s) — este material será registrado automaticamente em <strong>Quarentena</strong> e não deve ser aplicado na obra até liberação.
+              </p>
+            )}
+            <Field label="Observações">
+              <textarea placeholder="Detalhes adicionais, tratativa com fornecedor, RNC aberta..." value={editing.notes} onChange={(e) => setEditing({ ...editing, notes: e.target.value })} />
             </Field>
             <Actions cancel={() => setEditing(null)} disabled={saving} />
           </form>
@@ -369,6 +417,20 @@ export function FvsOperational() {
               <Field label="Procedimento"><input value={editing.procedure} onChange={(e) => setEditing({ ...editing, procedure: e.target.value })} /></Field>
             </div>
             <Field label="Equipe / executor"><input value={editing.team} onChange={(e) => setEditing({ ...editing, team: e.target.value })} /></Field>
+            {(() => {
+              const ref = fvsNormativeRefs[Number(editing.code.slice(4)) - 1];
+              if (!ref) return null;
+              return (
+                <div className="normative-box">
+                  <strong>Referência normativa e tolerância</strong>
+                  <ul>
+                    {ref.standards.map((s) => <li key={s}>{s}</li>)}
+                  </ul>
+                  <p>{ref.tolerance}</p>
+                  <small>Complementa o critério de aceitação do projeto/procedimento executivo — não substitui exigência específica de projeto.</small>
+                </div>
+              );
+            })()}
             <div className="check-head">
               <b>Itens de verificação</b>
               <span>{editing.answers.filter((a) => a.result).length} de {checks.length} preenchidos</span>
