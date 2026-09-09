@@ -21,7 +21,7 @@ A plataforma centraliza Fichas de Verificação de Serviço (FVS), inspeção de
 - Gestão de auditorias e prontidão para certificação;
 - Gestão de processos, riscos, oportunidades e tarefas;
 - Cadastro de equipe e acompanhamento de competências;
-- Autenticação por e-mail e senha;
+- Autenticação por e-mail e senha, com criação de contas somente pelo administrador;
 - Proteção dos dados por Row Level Security (RLS);
 - Identificação do autor de cada registro;
 - Interface adaptada para computador, tablet e celular.
@@ -88,11 +88,32 @@ No painel do Supabase:
 
 1. Acesse **Authentication → Sign In / Providers**;
 2. Habilite o provedor **Email**;
-3. Mantenha **Anonymous sign-ins** desativado;
-4. Defina se o usuário deverá confirmar o e-mail;
-5. Salve as alterações.
+3. Desative **Allow new users to sign up**;
+4. Mantenha **Anonymous sign-ins** desativado;
+5. Defina se o usuário deverá confirmar o e-mail;
+6. Salve as alterações.
 
-Durante a implantação, o cadastro público pode permanecer habilitado. Depois de cadastrar a equipe, recomenda-se desativá-lo e criar novos usuários por convite.
+O aplicativo não exibe cadastro público. A opção **Allow new users to sign up** também precisa permanecer desativada no Supabase, pois essa configuração bloqueia tentativas de cadastro feitas diretamente pela API.
+
+### Criar um acesso para um colaborador
+
+Somente o administrador da obra deve executar este procedimento:
+
+1. Acesse **Authentication → Users** no Supabase;
+2. Clique em **Add user**;
+3. Escolha **Send invitation** para o colaborador definir a própria senha, ou **Create new user** para criar uma senha provisória;
+4. Informe o nome no campo de metadados, quando disponível, usando a chave `full_name`;
+5. Depois da criação, confirme o cargo na tabela `profiles`.
+
+O gatilho de [`supabase-patch-cargos.sql`](./supabase-patch-cargos.sql) cria automaticamente o perfil como `inspetor`. Para alterar o cargo pelo **SQL Editor**, use o e-mail correto:
+
+```sql
+update profiles
+set role = 'mestre_obras'
+where id = (select id from auth.users where email = 'colaborador@empresa.com');
+```
+
+Os cargos aceitos são `inspetor`, `mestre_obras` e `engenheiro`. Use `engenheiro` somente para administradores, pois esse cargo pode alterar e excluir registros de outros usuários.
 
 ### 2. Criar banco, políticas e Storage
 
@@ -181,6 +202,8 @@ O frontend utiliza somente a chave pública do Supabase. A proteção efetiva é
 Regras implementadas:
 
 - Visitantes sem autenticação não acessam a plataforma;
+- Não existe botão ou fluxo público de cadastro;
+- Novas contas são criadas somente pelo administrador no Supabase;
 - Usuários autenticados podem consultar os registros da equipe;
 - Inclusões recebem o `user_id` e o e-mail do autor;
 - Alteração e exclusão são permitidas somente ao proprietário do registro;
@@ -189,7 +212,7 @@ Regras implementadas:
 - O aplicativo utiliza links assinados e temporários para visualizar imagens;
 - Arquivos `.env` não são enviados ao Git.
 
-> A versão atual diferencia usuários autenticados e proprietários dos registros, mas ainda não possui papéis formais de administrador, funcionário e auditor.
+> Os papéis atuais são `inspetor`, `mestre_obras` e `engenheiro`. O `engenheiro` atua como administrador operacional; os demais usuários alteram somente os próprios registros.
 
 ## Estrutura do projeto
 
